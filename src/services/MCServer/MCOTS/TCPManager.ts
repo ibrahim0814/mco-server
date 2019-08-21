@@ -170,6 +170,85 @@ async function ClientConnect(con: ConnectionObj, node: MessageNode) {
   return { con, nodes: [rPacket] };
 }
 
+async function handleSetOptions(conn: ConnectionObj, node: MessageNode) {
+  try {
+    const result = await mcotServer._setOptions(conn, node);
+    const responsePackets = result.nodes;
+    const updatedConnection = await socketWriteIfOpen(
+      result.con,
+      responsePackets
+    );
+    return updatedConnection;
+  } catch (error) {
+    logger.error(`Error in MC_SET_OPTIONS: ${error}`)
+    throw new Error(`Error in MC_SET_OPTIONS: ${error}`);
+  }
+}
+
+async function handleTrackingMsg(conn: ConnectionObj, node: MessageNode) {
+  try {
+    const result = await mcotServer._trackingMessage(conn, node);
+    const responsePackets = result.nodes;
+    const updatedConnection = await socketWriteIfOpen(
+      result.con,
+      responsePackets
+    );
+    return updatedConnection;
+  } catch (error) {
+    throw new Error(`Error in MC_TRACKING_MSG: ${error}`);
+  }
+}
+
+async function handlePlayerPhysical(conn: ConnectionObj, node: MessageNode) {
+  try {
+    const result = await mcotServer._updatePlayerPhysical(conn, node);
+    const responsePackets = result.nodes;
+    const updatedConnection = await socketWriteIfOpen(
+      result.con,
+      responsePackets
+    );
+    return updatedConnection;
+  } catch (error) {
+    throw new Error(`Error in MC_UPDATE_PLAYER_PHYSICAL: ${error}`);
+  }
+}
+
+async function handleClientConnectMsg(conn: ConnectionObj, node: MessageNode) {
+  try {
+    const result = await ClientConnect(conn, node);
+    const responsePackets = result.nodes;
+    // write the socket
+    const updatedConnection = await socketWriteIfOpen(result.con, responsePackets);
+    return updatedConnection;
+  } catch (error) {
+    throw new Error(`[TCPManager] Error writing to socket: ${error}`);
+  }
+}
+
+async function handleLogout(conn: ConnectionObj, node: MessageNode) {
+  try {
+    const result = await mcotServer._logout(conn, node);
+    const responsePackets = result.nodes;
+    // write the socket
+    const updatedConnection = await socketWriteIfOpen(result.con, responsePackets);
+    return updatedConnection;
+  } catch (error) {
+    throw new Error(`[TCPManager] Error writing to socket: ${error}`);
+  }
+}
+
+async function handleStockCareInfo(conn: ConnectionObj, node: MessageNode) {
+  try {
+    const result = await GetStockCarInfo(conn, node);
+    const responsePackets = result.nodes;
+    // write the socket
+    const updatedConnection = await socketWriteIfOpen(result.con, responsePackets);
+    return updatedConnection;
+  } catch (error) {
+    throw new Error(`[TCPManager] Error writing to socket: ${error}`);
+  }
+}
+
 async function ProcessInput(node: MessageNode, conn: ConnectionObj) {
   let updatedConnection = conn;
   const currentMsgNo = node.msgNo;
@@ -177,103 +256,58 @@ async function ProcessInput(node: MessageNode, conn: ConnectionObj) {
 
   switch (currentMsgString) {
     case "MC_SET_OPTIONS":
-      try {
-        const result = await mcotServer._setOptions(conn, node);
-        const responsePackets = result.nodes;
-        updatedConnection = await socketWriteIfOpen(
-          result.con,
-          responsePackets
-        );
-        return updatedConnection;
-      } catch (error) {
-        throw new Error(`Error in MC_SET_OPTIONS: ${error}`);
-      }
-      break;
+      return handleSetOptions(conn, node)
     case "MC_TRACKING_MSG":
-      try {
-        const result = await mcotServer._trackingMessage(conn, node);
-        const responsePackets = result.nodes;
-        updatedConnection = await socketWriteIfOpen(
-          result.con,
-          responsePackets
-        );
-        return updatedConnection;
-      } catch (error) {
-        throw new Error(`Error in MC_TRACKING_MSG: ${error}`);
-      }
-      break;
+      return handleTrackingMsg(conn, node)
     case "MC_UPDATE_PLAYER_PHYSICAL":
-      try {
-        const result = await mcotServer._updatePlayerPhysical(conn, node);
-        const responsePackets = result.nodes;
-        updatedConnection = await socketWriteIfOpen(
-          result.con,
-          responsePackets
-        );
-        return updatedConnection;
-      } catch (error) {
-        throw new Error(`Error in MC_UPDATE_PLAYER_PHYSICAL: ${error}`);
-      }
-      break;
+      return handlePlayerPhysical(conn, node)
+    case "MC_CLIENT_CONNECT_MSG":
+      return handleClientConnectMsg(conn, node)
+    case "MC_LOGOUT":
+      return handleLogout(conn, node)
+    case "MC_STOCK_CAR_INFO":
+      return handleStockCareInfo(conn, node)
 
     default:
-      break;
+      node.setAppId(conn.appId);
+      throw new Error(`Message Number Not Handled: ${currentMsgNo} (${currentMsgString})
+        conID: ${node.toFrom}  PersonaID: ${node.appId}`);
   }
+}
 
-  if (currentMsgString === "MC_CLIENT_CONNECT_MSG") {
-    try {
-      const result = await ClientConnect(conn, node);
-      const responsePackets = result.nodes;
-      // write the socket
-      updatedConnection = await socketWriteIfOpen(result.con, responsePackets);
-      return updatedConnection;
-    } catch (error) {
-      throw new Error(`[TCPManager] Error writing to socket: ${error}`);
+function decryptMessage(msg: MessageNode, conn: ConnectionObj) {
+  try {
+    /**
+     * Attempt to decrypt message
+     */
+    const encryptedBuffer = Buffer.from(msg.data);
+    logger.warn(
+      `Full packet before decrypting: ${encryptedBuffer.toString("hex")}`
+    );
+
+    logger.warn(
+      `Message buffer before decrypting: ${encryptedBuffer.toString("hex")}`
+    );
+    if (!conn.enc) {
+      throw new Error("ARC4 decrypter is null");
     }
-  } else if (currentMsgString === "MC_LOGIN") {
-    try {
-      const result = await mcotServer._login(conn, node);
-      const responsePackets = result.nodes;
-      // write the socket
-      updatedConnection = await socketWriteIfOpen(result.con, responsePackets);
-      return updatedConnection;
-    } catch (error) {
-      throw new Error(`[TCPManager] Error writing to socket: ${error}`);
+    logger.info(`Using encryption id: ${conn.enc.getId()}`);
+    const deciphered = conn.enc.decrypt(encryptedBuffer);
+    logger.warn(
+      `Message buffer after decrypting: ${deciphered.toString("hex")}`
+    );
+
+    if (deciphered.readUInt16LE(0) <= 0) {
+      throw new Error(`Failure deciphering message, exiting.`);
     }
-  } else if (currentMsgString === "MC_LOGOUT") {
-    try {
-      const result = await mcotServer._logout(conn, node);
-      const responsePackets = result.nodes;
-      // write the socket
-      updatedConnection = await socketWriteIfOpen(result.con, responsePackets);
-      return updatedConnection;
-    } catch (error) {
-      throw new Error(`[TCPManager] Error writing to socket: ${error}`);
-    }
-  } else if (currentMsgString === "MC_GET_LOBBIES") {
-    const result = await mcotServer._getLobbies(conn, node);
-    const responsePackets = result.nodes;
-    try {
-      // write the socket
-      updatedConnection = await socketWriteIfOpen(result.con, responsePackets);
-      return updatedConnection;
-    } catch (error) {
-      throw new Error(`[TCPManager] Error writing to socket: ${error}`);
-    }
-  } else if (currentMsgString === "MC_STOCK_CAR_INFO") {
-    try {
-      const result = await GetStockCarInfo(conn, node);
-      const responsePackets = result.nodes;
-      // write the socket
-      updatedConnection = await socketWriteIfOpen(result.con, responsePackets);
-      return updatedConnection;
-    } catch (error) {
-      throw new Error(`[TCPManager] Error writing to socket: ${error}`);
-    }
-  } else {
-    node.setAppId(conn.appId);
-    throw new Error(`Message Number Not Handled: ${currentMsgNo} (${currentMsgString})
-      conID: ${node.toFrom}  PersonaID: ${node.appId}`);
+
+    // Update the MessageNode with the deciphered buffer
+    msg.updateBuffer(deciphered);
+    return { msg, conn }
+  } catch (e) {
+    throw new Error(
+      `Decrypt() exception thrown! Disconnecting...conId:${conn.id}: ${e}`
+    );
   }
 }
 
@@ -293,38 +327,7 @@ async function MessageReceived(msg: MessageNode, con: ConnectionObj) {
     }
 
     if (msg.flags - 8 >= 0) {
-      try {
-        /**
-         * Attempt to decrypt message
-         */
-        const encryptedBuffer = Buffer.from(msg.data);
-        logger.warn(
-          `Full packet before decrypting: ${encryptedBuffer.toString("hex")}`
-        );
-
-        logger.warn(
-          `Message buffer before decrypting: ${encryptedBuffer.toString("hex")}`
-        );
-        if (!newConnection.enc) {
-          throw new Error("ARC4 decrypter is null");
-        }
-        logger.info(`Using encryption id: ${newConnection.enc.getId()}`);
-        const deciphered = newConnection.enc.decrypt(encryptedBuffer);
-        logger.warn(
-          `Message buffer after decrypting: ${deciphered.toString("hex")}`
-        );
-
-        if (deciphered.readUInt16LE(0) <= 0) {
-          throw new Error(`Failure deciphering message, exiting.`);
-        }
-
-        // Update the MessageNode with the deciphered buffer
-        msg.updateBuffer(deciphered);
-      } catch (e) {
-        throw new Error(
-          `Decrypt() exception thrown! Disconnecting...conId:${newConnection.id}: ${e}`
-        );
-      }
+      { msg, conn } = decryptMessage(msg, newConnection)
     }
   }
 
