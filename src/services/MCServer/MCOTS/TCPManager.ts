@@ -275,42 +275,6 @@ async function ProcessInput(node: MessageNode, conn: ConnectionObj) {
   }
 }
 
-function decryptMessage(msg: MessageNode, conn: ConnectionObj) {
-  try {
-    /**
-     * Attempt to decrypt message
-     */
-    const encryptedBuffer = Buffer.from(msg.data);
-    logger.warn(
-      `Full packet before decrypting: ${encryptedBuffer.toString("hex")}`
-    );
-
-    logger.warn(
-      `Message buffer before decrypting: ${encryptedBuffer.toString("hex")}`
-    );
-    if (!conn.enc) {
-      throw new Error("ARC4 decrypter is null");
-    }
-    logger.info(`Using encryption id: ${conn.enc.getId()}`);
-    const deciphered = conn.enc.decrypt(encryptedBuffer);
-    logger.warn(
-      `Message buffer after decrypting: ${deciphered.toString("hex")}`
-    );
-
-    if (deciphered.readUInt16LE(0) <= 0) {
-      throw new Error(`Failure deciphering message, exiting.`);
-    }
-
-    // Update the MessageNode with the deciphered buffer
-    msg.updateBuffer(deciphered);
-    return { msg, conn }
-  } catch (e) {
-    throw new Error(
-      `Decrypt() exception thrown! Disconnecting...conId:${conn.id}: ${e}`
-    );
-  }
-}
-
 async function MessageReceived(msg: MessageNode, con: ConnectionObj) {
   const newConnection = con;
   if (!newConnection.useEncryption && (msg.flags && 0x08)) {
@@ -327,7 +291,38 @@ async function MessageReceived(msg: MessageNode, con: ConnectionObj) {
     }
 
     if (msg.flags - 8 >= 0) {
-      { msg, conn } = decryptMessage(msg, newConnection)
+      try {
+        /**
+         * Attempt to decrypt message
+         */
+        const encryptedBuffer = Buffer.from(msg.data);
+        logger.warn(
+          `Full packet before decrypting: ${encryptedBuffer.toString("hex")}`
+        );
+
+        logger.warn(
+          `Message buffer before decrypting: ${encryptedBuffer.toString("hex")}`
+        );
+        if (!newConnection.enc) {
+          throw new Error("ARC4 decrypter is null");
+        }
+        logger.info(`Using encryption id: ${newConnection.enc.getId()}`);
+        const deciphered = newConnection.enc.decrypt(encryptedBuffer);
+        logger.warn(
+          `Message buffer after decrypting: ${deciphered.toString("hex")}`
+        );
+
+        if (deciphered.readUInt16LE(0) <= 0) {
+          throw new Error(`Failure deciphering message, exiting.`);
+        }
+
+        // Update the MessageNode with the deciphered buffer
+        msg.updateBuffer(deciphered);
+      } catch (e) {
+        throw new Error(
+          `Decrypt() exception thrown! Disconnecting...conId:${newConnection.id}: ${e}`
+        );
+      }
     }
   }
 
