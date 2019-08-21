@@ -180,7 +180,7 @@ async function handleSetOptions(conn: ConnectionObj, node: MessageNode) {
     );
     return updatedConnection;
   } catch (error) {
-    logger.error(`Error in MC_SET_OPTIONS: ${error}`)
+    logger.error(`Error in MC_SET_OPTIONS: ${error}`);
     throw new Error(`Error in MC_SET_OPTIONS: ${error}`);
   }
 }
@@ -218,7 +218,10 @@ async function handleClientConnectMsg(conn: ConnectionObj, node: MessageNode) {
     const result = await ClientConnect(conn, node);
     const responsePackets = result.nodes;
     // write the socket
-    const updatedConnection = await socketWriteIfOpen(result.con, responsePackets);
+    const updatedConnection = await socketWriteIfOpen(
+      result.con,
+      responsePackets
+    );
     return updatedConnection;
   } catch (error) {
     throw new Error(`[TCPManager] Error writing to socket: ${error}`);
@@ -230,7 +233,10 @@ async function handleLogout(conn: ConnectionObj, node: MessageNode) {
     const result = await mcotServer._logout(conn, node);
     const responsePackets = result.nodes;
     // write the socket
-    const updatedConnection = await socketWriteIfOpen(result.con, responsePackets);
+    const updatedConnection = await socketWriteIfOpen(
+      result.con,
+      responsePackets
+    );
     return updatedConnection;
   } catch (error) {
     throw new Error(`[TCPManager] Error writing to socket: ${error}`);
@@ -242,7 +248,10 @@ async function handleStockCareInfo(conn: ConnectionObj, node: MessageNode) {
     const result = await GetStockCarInfo(conn, node);
     const responsePackets = result.nodes;
     // write the socket
-    const updatedConnection = await socketWriteIfOpen(result.con, responsePackets);
+    const updatedConnection = await socketWriteIfOpen(
+      result.con,
+      responsePackets
+    );
     return updatedConnection;
   } catch (error) {
     throw new Error(`[TCPManager] Error writing to socket: ${error}`);
@@ -256,17 +265,17 @@ async function ProcessInput(node: MessageNode, conn: ConnectionObj) {
 
   switch (currentMsgString) {
     case "MC_SET_OPTIONS":
-      return handleSetOptions(conn, node)
+      return handleSetOptions(conn, node);
     case "MC_TRACKING_MSG":
-      return handleTrackingMsg(conn, node)
+      return handleTrackingMsg(conn, node);
     case "MC_UPDATE_PLAYER_PHYSICAL":
-      return handlePlayerPhysical(conn, node)
+      return handlePlayerPhysical(conn, node);
     case "MC_CLIENT_CONNECT_MSG":
-      return handleClientConnectMsg(conn, node)
+      return handleClientConnectMsg(conn, node);
     case "MC_LOGOUT":
-      return handleLogout(conn, node)
+      return handleLogout(conn, node);
     case "MC_STOCK_CAR_INFO":
-      return handleStockCareInfo(conn, node)
+      return handleStockCareInfo(conn, node);
 
     default:
       node.setAppId(conn.appId);
